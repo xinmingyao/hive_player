@@ -20,7 +20,7 @@
 #define H264        96
 #define G711        8
 
-#define VIDEO_SIZE 65536*100
+#define VIDEO_SIZE 65536*10
 #if defined _WIN32
 #include "windows.h"
 #else
@@ -85,9 +85,9 @@ typedef struct rtp_package {
 } rtp_t;
 
 struct player_context{
-  char buf[VIDEO_SIZE];
+  uint8_t  buf[VIDEO_SIZE];
   int buf_len;
-  char * buf_pos;
+  uint8_t * buf_pos;
   AVCodecContext * av_ctx;
   SDL_Surface * screen;
   SDL_Window * window;

@@ -4,11 +4,11 @@
 #define END 0
 
 static int  decode_rtp2h264(struct player_context * ctx,char * rtp_buf,int len){
+  assert(ctx);
   nalu_header_t * nalu_header;
   fu_header_t   * fu_header;
   nalu_header = (nalu_header_t *)&rtp_buf[12];
-  int type = *((int*)&rtp_buf[12])&0x001F;
-  
+  //int type = *((int*)&rtp_buf[12])&0x001F;
   assert(ctx->buf_len < 655360);
   if (nalu_header->type == 28) { /* FU-A */
     fu_header = (fu_header_t *)&rtp_buf[13];
@@ -43,7 +43,6 @@ static int  decode_rtp2h264(struct player_context * ctx,char * rtp_buf,int len){
     }
   } else { /* nalu */
 	ctx->buf_len = len-12+4;
-	assert(ctx->buf_len < 65536);
 	char temp[4] = {0,0,0,1};
 	memcpy(ctx->buf,&temp[0],4);
 	memcpy(&ctx->buf[4],&rtp_buf[12],len-12);
@@ -62,7 +61,7 @@ static int do_play(struct player_context * ctx){
   pack.size = ctx->buf_len;
   ptr = vedio_data;
   frame = av_frame_alloc();
-  int len = avcodec_decode_video2(ctx->av_ctx, frame, &frame_finished,&pack);
+  avcodec_decode_video2(ctx->av_ctx, frame, &frame_finished,&pack);
   if(frame_finished){
     int width,height;
     int i;
@@ -132,7 +131,7 @@ lnew_player(lua_State * L){
   int win_width,win_height;
   HWND handle;
   AVCodecContext * c;
-  handle = luaL_checkinteger(L,1);
+  handle = (HWND)luaL_checkinteger(L,1);
   win_width = luaL_checkinteger(L,2);
   win_height = luaL_checkinteger(L,3);
   
@@ -159,7 +158,7 @@ lnew_player(lua_State * L){
   if(!win){
     return luaL_error(L,"create window error");
   }
-  int num = SDL_GetNumRenderDrivers();
+  SDL_GetNumRenderDrivers();
   SDL_Renderer * r = SDL_CreateRenderer(win,0,SDL_RENDERER_ACCELERATED);
   if(!r){
     return luaL_error(L,"create render error");

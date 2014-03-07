@@ -20,6 +20,7 @@
 #define H264        96
 #define G711        8
 
+#define VIDEO_SIZE 65536*100
 #if defined _WIN32
 #include "windows.h"
 #else
@@ -45,9 +46,10 @@ typedef struct rtp_header {
 
 typedef struct nalu_header {
   /* byte 0 */
-  uint8_t type:   5;  /* bit: 0~4 */
-  uint8_t nri:    2;  /* bit: 5~6 */
-  uint8_t f:      1;  /* bit: 7 */
+   uint8_t type:   5;  /* bit: 0~4 */
+   uint8_t nri:    2;  /* bit: 5~6 */
+   uint8_t f:      1;  /* bit: 7 */
+ 
 } __attribute__ ((packed)) nalu_header_t; /* 1 bytes */
 
 typedef struct nalu {
@@ -83,7 +85,7 @@ typedef struct rtp_package {
 } rtp_t;
 
 struct player_context{
-  char buf[65536];
+  char buf[VIDEO_SIZE];
   int buf_len;
   char * buf_pos;
   AVCodecContext * av_ctx;
@@ -92,6 +94,7 @@ struct player_context{
   int win_width;
   int win_height;
   SDL_Renderer * render;
+  SDL_Texture * text;
 
 };
 

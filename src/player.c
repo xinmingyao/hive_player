@@ -7,20 +7,46 @@ static int  decode_rtp2h264(struct player_context * ctx,char * rtp_buf,int len){
   nalu_header_t * nalu_header;
   fu_header_t   * fu_header;
   nalu_header = (nalu_header_t *)&rtp_buf[12];
-  ctx->buf_len += len-14;
-  assert(ctx->buf_len < 65536);
-  memcpy(ctx->buf_pos,&rtp_buf[14],len-14);
-  ctx->buf_pos += len-14;
+  int type = *((int*)&rtp_buf[12])&0x001F;
+  
+  assert(ctx->buf_len < 655360);
   if (nalu_header->type == 28) { /* FU-A */
     fu_header = (fu_header_t *)&rtp_buf[13];
     if (fu_header->e == 1) { /* end of fu-a */
+		memcpy(ctx->buf_pos,&rtp_buf[14],len-14);
+		ctx->buf_pos += len-14;
+		ctx->buf_len += len-14;
       return END;
     } else if (fu_header->s == 1) { /* start of fu-a */
+		char temp[4] = {0,0,0,1};
+		memcpy(ctx->buf_pos,&temp[0],4);
+		ctx->buf_pos += 4;
+		ctx->buf_len += 4;
+		uint8_t head;
+		head = (fu_header->type&0x1f)
+				|(nalu_header->nri <<5)
+				|(nalu_header->f <<7);
+	
+		memcpy(ctx->buf_pos,&head,1);
+		ctx->buf_pos += 1;
+		ctx->buf_len += 1;
+		memcpy(ctx->buf_pos,&rtp_buf[14],len-14);
+		ctx->buf_pos += len-14;
+		ctx->buf_len += len-14;
+	
       return CONTINUE;
     } else {
-      return CONTINUE;
+		memcpy(ctx->buf_pos,&rtp_buf[14],len-14);
+		ctx->buf_pos += len-14;
+		ctx->buf_len += len-14;
+		return CONTINUE;
     }
   } else { /* nalu */
+	ctx->buf_len = len-12+4;
+	assert(ctx->buf_len < 65536);
+	char temp[4] = {0,0,0,1};
+	memcpy(ctx->buf,&temp[0],4);
+	memcpy(&ctx->buf[4],&rtp_buf[12],len-12);
     return END;
   }
 }
@@ -28,7 +54,7 @@ static int  decode_rtp2h264(struct player_context * ctx,char * rtp_buf,int len){
 static int do_play(struct player_context * ctx){
   int frame_finished;
   AVFrame * frame;
-  char vedio_data[65536];
+  char vedio_data[VIDEO_SIZE];
   char * ptr;
   AVPacket pack;
   av_init_packet(&pack);
@@ -63,15 +89,21 @@ static int do_play(struct player_context * ctx){
     rect.y = 0;
     rect.w = width;
     rect.h = height;
-    int pitch = width * SDL_BYTESPERPIXEL(SDL_PIXELFORMAT_YV12);
-    SDL_Texture * text = SDL_CreateTexture(ctx->render,SDL_PIXELFORMAT_YV12,SDL_TEXTUREACCESS_STREAMING,width,height);
+	
+    int pitch = ctx->win_width * SDL_BYTESPERPIXEL(SDL_PIXELFORMAT_YV12);
     
-    SDL_UpdateTexture(text,&rect,vedio_data,pitch);
+    SDL_UpdateTexture(ctx->text,NULL,vedio_data,pitch);
+	SDL_SetRenderDrawColor(ctx->render,0,0,0,0);
     SDL_RenderClear(ctx->render);
-    SDL_RenderCopy(ctx->render,text,NULL,NULL);
+	SDL_SetRenderDrawColor(ctx->render,255,0,0,0);
+    SDL_RenderCopy(ctx->render,ctx->text,NULL,&rect);
     SDL_RenderPresent(ctx->render);
+	ctx->buf_len = 0;
+	ctx->buf_pos = ctx->buf;
     return 0;
   }
+	ctx->buf_len = 0;
+	ctx->buf_pos = ctx->buf;
   return 0;
 }
 
@@ -84,9 +116,9 @@ static int  input_data(struct player_context * ctx,char * buf,int len){
   }
 }
 
-static int_fast32_t
+static int
 linit_player(lua_State * L){
-  if(SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER)){
+  if(SDL_Init(SDL_INIT_VIDEO)){
     return luaL_error(L,"can not start sdl video");
   }
   avcodec_register_all();
@@ -96,12 +128,14 @@ linit_player(lua_State * L){
 
 static int
 lnew_player(lua_State * L){
+  
   int win_width,win_height;
   HWND handle;
   AVCodecContext * c;
-  win_width = luaL_checkinteger(L,1);
-  win_height = luaL_checkinteger(L,2);
-  handle = luaL_checkinteger(L,3);
+  handle = luaL_checkinteger(L,1);
+  win_width = luaL_checkinteger(L,2);
+  win_height = luaL_checkinteger(L,3);
+  
   AVCodec * codec = avcodec_find_decoder(CODEC_ID_H264);
   if(!codec){
     return luaL_error(L,"can not find h264 codec");
@@ -121,7 +155,7 @@ lnew_player(lua_State * L){
     return luaL_error(L,"malloc play context error");
   }
   
-  SDL_Window * win = SDL_CreateWindowFrom(handle);
+  SDL_Window * win = SDL_CreateWindowFrom((void *)handle);
   if(!win){
     return luaL_error(L,"create window error");
   }
@@ -130,11 +164,16 @@ lnew_player(lua_State * L){
   if(!r){
     return luaL_error(L,"create render error");
   }
+  SDL_Texture * text = SDL_CreateTexture(r,SDL_PIXELFORMAT_YV12,SDL_TEXTUREACCESS_STREAMING,win_width,win_height);
+  if(!text){
+	return luaL_error(L,"create texture error");
+  }
   ctx->av_ctx = c ; 
   ctx->window = win;
   ctx->render = r;
   ctx->win_width = win_width;
   ctx->win_height = win_height;
+  ctx->text = text;
   lua_pushlightuserdata(L,ctx);
   return 1;
 }
@@ -157,7 +196,7 @@ lsend(lua_State * L){
 }
 
 int
-luaopen_hiveplayer_c(lua_State *L) {
+luaopen_hiveplayer(lua_State *L) {
   luaL_checkversion(L);
   luaL_Reg l[] = {
     {"init_player",linit_player},
